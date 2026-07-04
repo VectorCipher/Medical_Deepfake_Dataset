@@ -51,9 +51,15 @@ def convert_csvs_to_yolo_labels():
         h, w = img.shape[:2]
 
         df = pd.read_csv(csv_path)
+        df.columns = df.columns.str.strip() # Remove any leading/trailing spaces in headers
+
         lines = []
         for _, row in df.iterrows():
-            x1, y1, x2, y2 = row["x_min"], row["y_min"], row["x_max"], row["y_max"]
+            # Support both 'x_min' and 'xmin' naming conventions just in case
+            x1 = row.get("x_min", row.get("xmin"))
+            y1 = row.get("y_min", row.get("ymin"))
+            x2 = row.get("x_max", row.get("xmax"))
+            y2 = row.get("y_max", row.get("ymax"))
             cx = (x1 + x2) / 2 / w
             cy = (y1 + y2) / 2 / h
             bw = (x2 - x1) / w
