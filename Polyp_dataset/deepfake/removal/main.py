@@ -20,14 +20,18 @@ from pipeline import refine_and_inpaint
 
 def load_bbox_from_csv(csv_path):
     """
-    Reads a per-image CSV (columns: class_name, x_min, y_min, x_max, y_max)
-    and returns a list of (x_min, y_min, x_max, y_max) tuples.
+    Reads a per-image CSV and returns a list of (x_min, y_min, x_max, y_max) tuples.
     """
     df = pd.read_csv(csv_path)
+    df.columns = df.columns.str.strip() # Remove any leading/trailing spaces
+    
     bboxes = []
     for _, row in df.iterrows():
-        bboxes.append((int(row["x_min"]), int(row["y_min"]),
-                        int(row["x_max"]), int(row["y_max"])))
+        x1 = int(row.get("x_min", row.get("xmin")))
+        y1 = int(row.get("y_min", row.get("ymin")))
+        x2 = int(row.get("x_max", row.get("xmax")))
+        y2 = int(row.get("y_max", row.get("ymax")))
+        bboxes.append((x1, y1, x2, y2))
     return bboxes
 
 
