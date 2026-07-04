@@ -17,6 +17,7 @@ MASKS_DIR    = "/kaggle/input/datasets/debeshjha1/kvasirseg/Kvasir-SEG/Kvasir-SE
 BBOX_DIR     = "/kaggle/input/datasets/debeshjha1/kvasirseg/Kvasir-SEG/Kvasir-SEG/bbox"  # per-image CSV files (class_name,x_min,y_min,x_max,y_max), used as fallback if mask is missing
 
 OUTPUT_DIR   = "/kaggle/working/inpainted"
+OUTPUT_BBOX_DIR = "/kaggle/working/inpainted_bboxes"
 LOG_CSV_PATH = "/kaggle/working/inpainting_log.csv"
 
 CRITIC_WEIGHTS = "/kaggle/input/models/naitikpal/yolo-polyps-model/pytorch/default/1/best (1).pt"
@@ -34,13 +35,11 @@ MASK_FILE_EXT = ".jpg"      # extension of your mask files, if different from im
 # Refinement loop
 # ---------------------------------------------------------------------------
 
-MAX_ITERS = 4
+MAX_ITERS = 5
 CONF_THRESHOLD = 0.35       # critic confidence below this = "polyp successfully removed"
-SWITCH_TO_SD_AFTER = 2      # after this many failed LaMa attempts, escalate to SD inpainting
 
 # ---------------------------------------------------------------------------
 # Device
 # ---------------------------------------------------------------------------
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-SD_DTYPE = torch.float16 if DEVICE == "cuda" else torch.float32
