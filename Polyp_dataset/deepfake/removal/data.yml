@@ -1,0 +1,8 @@
+# Replace these paths with the actual paths to your images folder
+# Since we are just training a critic, we can use the same folder for train and val for now
+train: /kaggle/input/datasets/debeshjha1/kvasirseg/Kvasir-SEG/Kvasir-SEG/images
+val: /kaggle/input/datasets/debeshjha1/kvasirseg/Kvasir-SEG/Kvasir-SEG/images
+
+# Classes
+nc: 1
+names: ['polyp']
