@@ -19,7 +19,7 @@ BBOX_DIR     = "/kaggle/input/datasets/debeshjha1/kvasirseg/Kvasir-SEG/Kvasir-SE
 OUTPUT_DIR   = "/kaggle/working/inpainted"
 LOG_CSV_PATH = "/kaggle/working/inpainting_log.csv"
 
-CRITIC_WEIGHTS = "/kaggle/working/critic_yolov8/weights/best.pt"
+CRITIC_WEIGHTS = "/kaggle/input/models/naitikpal/yolo-polyps-model/pytorch/default/1/best (1).pt"
 CRITIC_LABELS_DIR = "/kaggle/working/yolo_labels"
 
 # ---------------------------------------------------------------------------
