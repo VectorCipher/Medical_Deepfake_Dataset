@@ -7,7 +7,7 @@ def main():
     # Train the model
     # Note: imgsz=640 is standard, epochs=30 is usually enough for a critic
     model.train(
-        data='data.yaml', 
+        data='data.yml', 
         epochs=30, 
         imgsz=640, 
         project='critic_yolov8', 
