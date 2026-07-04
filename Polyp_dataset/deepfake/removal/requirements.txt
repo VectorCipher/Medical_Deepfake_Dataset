@@ -1,7 +1,4 @@
 simple-lama-inpainting
-diffusers
-accelerate
-transformers
 ultralytics
 opencv-python-headless
 pandas
