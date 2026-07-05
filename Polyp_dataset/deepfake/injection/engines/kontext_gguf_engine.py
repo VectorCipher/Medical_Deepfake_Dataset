@@ -4,15 +4,8 @@ engines/kontext_gguf_engine.py
 FLUX.1 Kontext [dev] engine, loaded from a GGUF-quantized transformer via
 diffusers, for reference-guided lesion INJECTION.
 
-Memory strategy (Q8_0 on 16 GB T4):
-  The Q8_0 transformer alone is ~12 GB.  enable_sequential_cpu_offload()
-  is incompatible with GGUF tensors, so we use enable_model_cpu_offload()
-  which moves whole sub-models on/off GPU.  To stay within VRAM we also:
-    1. Generate at a small resolution (max 256px) so the VAE tiles fit.
-    2. Shrink VAE tile sizes to 256 pixels.
-    3. Cap the reference crop at 128px.
-    4. Aggressively gc.collect + empty_cache before each call.
-  The result is upscaled back to the original image size before saving.
+With Q4_K_M (~7 GB), enable_model_cpu_offload() leaves ~7 GB headroom
+which comfortably handles 512px generation + VAE tiling.
 
 Requires:
     pip install git+https://github.com/huggingface/diffusers.git
@@ -75,15 +68,9 @@ class KontextGGUFEngine:
             transformer=transformer,
             torch_dtype=torch.bfloat16,
         )
-        # enable_model_cpu_offload is the ONLY offload mode compatible with
-        # GGUF quantized tensors (sequential offload crashes on meta-device
-        # conversion for GGUF types).
         self.pipe.enable_model_cpu_offload()
         self.pipe.vae.enable_slicing()
         self.pipe.vae.enable_tiling()
-        # Shrink VAE tile size to reduce per-tile VRAM
-        self.pipe.vae.tile_sample_min_size = 256
-        self.pipe.vae.tile_latent_min_size = 32
         self.pipe.set_progress_bar_config(disable=True)
 
         self.num_inference_steps = num_inference_steps or KONTEXT_NUM_STEPS
@@ -103,11 +90,8 @@ class KontextGGUFEngine:
     ) -> np.ndarray:
         orig_size = (target_img_bgr.shape[1], target_img_bgr.shape[0])
 
-        # ----- Downscale to 256px max to fit within ~2 GB VRAM headroom -----
-        # Q8_0 transformer eats ~12 GB; on a 16 GB T4 this leaves very
-        # little for VAE encode/decode even with tiling.  256px generation
-        # uses ~4x less memory than 512px per tile.
-        max_dim = 256
+        # Scale to max 512px for inference, then upscale result back
+        max_dim = 512
         scale = min(1.0, max_dim / max(orig_size))
         new_w = max(16, (int(orig_size[0] * scale) // 16) * 16)
         new_h = max(16, (int(orig_size[1] * scale) // 16) * 16)
@@ -119,10 +103,10 @@ class KontextGGUFEngine:
             mask, (new_w, new_h), interpolation=cv2.INTER_NEAREST
         )
 
-        # Cap reference crop at 128px to keep memory bounded
+        # Cap reference crop at 256px
         ref_h, ref_w = reference_crop_bgr.shape[:2]
-        if max(ref_h, ref_w) > 128:
-            ref_scale = 128 / max(ref_h, ref_w)
+        if max(ref_h, ref_w) > 256:
+            ref_scale = 256 / max(ref_h, ref_w)
             reference_crop_bgr = cv2.resize(
                 reference_crop_bgr,
                 (int(ref_w * ref_scale), int(ref_h * ref_scale)),
@@ -137,7 +121,6 @@ class KontextGGUFEngine:
         if seed is not None:
             generator = torch.Generator(device="cpu").manual_seed(seed)
 
-        # Force free any stale GPU tensors before inference
         gc.collect()
         torch.cuda.empty_cache()
 
@@ -154,7 +137,6 @@ class KontextGGUFEngine:
             generator=generator,
         ).images[0]
 
-        # Free GPU memory immediately after generation
         gc.collect()
         torch.cuda.empty_cache()
 
