@@ -216,3 +216,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+Polyp_dataset/deepfake/removal/csv_file_polyps_removal
+Polyp_dataset/deepfake/removal/ployps_removal
+Polyp_dataset/real
+Polyp_dataset/deepfake/original_video_deepfake_video
