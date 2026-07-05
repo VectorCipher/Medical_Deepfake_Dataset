@@ -28,7 +28,7 @@ CRITIC_LABELS_DIR = "/kaggle/working/yolo_labels"
 
 MASK_DILATE_INIT = 3        # px - small dilation even on first pass, avoids boundary halo
 MASK_DILATE_STEP = 12       # px - growth per failed refinement iteration
-MASK_FILE_EXT = ".png"      # extension of your mask files, if different from image ext
+MASK_FILE_EXT = ".jpg"      # extension of your mask files, if different from image ext
 
 # ---------------------------------------------------------------------------
 # Refinement loop
@@ -44,7 +44,6 @@ CONF_THRESHOLD = 0.35       # critic confidence below this = "polyp successfully
 
 NORMAL_IMAGES_DIRS = [
     "/kaggle/input/datasets/francismon/curated-colon-dataset-for-deep-learning/train/0_normal",
-    "/kaggle/input/datasets/francismon/curated-colon-dataset-for-deep-learning/test/0_normal"
 ]
 EXEMPLAR_BANK_DIR = "/kaggle/working/exemplar_bank"                     # cropped real lesions, built once
 INJECTED_OUTPUT_DIR = "/kaggle/working/injected"
