@@ -124,6 +124,14 @@ class KontextGGUFEngine:
         gc.collect()
         torch.cuda.empty_cache()
 
+        print(f"[DEBUG] orig_size: {orig_size}, scale: {scale:.3f}")
+        print(f"[DEBUG] Resized to new_w: {new_w}, new_h: {new_h}")
+        print(f"[DEBUG] target_rgb.size: {target_rgb.size}")
+        print(f"[DEBUG] ref_rgb.size: {ref_rgb.size}")
+        print(f"[DEBUG] mask_img.size: {mask_img.size}")
+        print(f"[DEBUG] VRAM allocated before pipe: {torch.cuda.memory_allocated() / 1e9:.2f} GB")
+        print(f"[DEBUG] VRAM reserved before pipe: {torch.cuda.memory_reserved() / 1e9:.2f} GB")
+
         result = self.pipe(
             prompt=prompt,
             image=target_rgb,
