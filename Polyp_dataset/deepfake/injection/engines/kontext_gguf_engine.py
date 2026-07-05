@@ -74,11 +74,16 @@ class KontextGGUFEngine:
 
         # Load only the transformer from the GGUF quant; everything else
         # (VAE, CLIP-L, T5-XXL, scheduler) comes from the original repo.
-        transformer_config = FluxTransformer2DModel.load_config(base_repo, subfolder="transformer")
+        from huggingface_hub import hf_hub_download
+        import os
+        
+        # Download the specific config.json from the transformer subfolder
+        config_path = hf_hub_download(repo_id=base_repo, filename="config.json", subfolder="transformer")
+        config_dir = os.path.dirname(config_path)
         
         transformer = FluxTransformer2DModel.from_single_file(
             gguf_path,
-            config=transformer_config,
+            config=config_dir,
             quantization_config=GGUFQuantizationConfig(compute_dtype=torch.bfloat16),
             torch_dtype=torch.bfloat16,
         )
