@@ -74,9 +74,11 @@ class KontextGGUFEngine:
 
         # Load only the transformer from the GGUF quant; everything else
         # (VAE, CLIP-L, T5-XXL, scheduler) comes from the original repo.
+        transformer_config = FluxTransformer2DModel.load_config(base_repo, subfolder="transformer")
+        
         transformer = FluxTransformer2DModel.from_single_file(
             gguf_path,
-            config=base_repo,
+            config=transformer_config,
             quantization_config=GGUFQuantizationConfig(compute_dtype=torch.bfloat16),
             torch_dtype=torch.bfloat16,
         )
