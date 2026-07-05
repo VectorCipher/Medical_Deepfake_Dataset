@@ -52,7 +52,9 @@ def main():
         logs.append(res.__dict__)
         print(f"[{i}/{len(filenames_with_dirs)}] {res.filename}: "
               f"exemplar={res.exemplar_used} iters={res.iterations_used} "
-              f"conf={res.final_confidence:.3f} success={res.success}")
+              f"conf={res.final_confidence:.3f} "
+              f"bbox=({res.bbox_x1},{res.bbox_y1},{res.bbox_x2},{res.bbox_y2}) "
+              f"success={res.success}")
 
         if i % 25 == 0:
             torch.cuda.empty_cache()
