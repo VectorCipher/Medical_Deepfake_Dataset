@@ -2,45 +2,29 @@
 engines/kontext_gguf_engine.py
 ================================
 FLUX.1 Kontext [dev] engine, loaded from a GGUF-quantized transformer via
-diffusers, for reference-guided lesion INJECTION. Unlike the LaMa/SD
-engines (which only take image + mask + text), this one is also
-conditioned on a real exemplar image (a cropped real polyp/tumor), so it
-blends an actual lesion appearance into the target tissue rather than
-hallucinating one from text alone.
+diffusers, for reference-guided lesion INJECTION.
 
-Requires (diffusers inpaint-with-reference support for Kontext is recent,
-install from main branch):
+Memory strategy (Q8_0 on 16 GB T4):
+  The Q8_0 transformer alone is ~12 GB.  enable_sequential_cpu_offload()
+  is incompatible with GGUF tensors, so we use enable_model_cpu_offload()
+  which moves whole sub-models on/off GPU.  To stay within VRAM we also:
+    1. Generate at a small resolution (max 256px) so the VAE tiles fit.
+    2. Shrink VAE tile sizes to 256 pixels.
+    3. Cap the reference crop at 128px.
+    4. Aggressively gc.collect + empty_cache before each call.
+  The result is upscaled back to the original image size before saving.
+
+Requires:
     pip install git+https://github.com/huggingface/diffusers.git
     pip install transformers accelerate sentencepiece gguf
-
-Weights:
-    - Transformer (GGUF, quantized): a .gguf file from
-      https://huggingface.co/QuantStack/FLUX.1-Kontext-dev-GGUF
-      (or your Kaggle mirror) - path set via config.KONTEXT_GGUF_PATH.
-      Pick Q4_K_M/Q5_K_M/Q6_K depending on free VRAM.
-    - VAE + text encoders + scheduler config: loaded normally from
-      black-forest-labs/FLUX.1-Kontext-dev (config.KONTEXT_BASE_REPO) -
-      these are NOT included in the GGUF file, which only replaces the
-      transformer weights.
-
-Known limitation worth being aware of (documented by the diffusers team
-and community testers): Kontext was not originally trained with explicit
-mask-based inpainting in mind - FluxKontextInpaintPipeline adds this on
-top, and results can be inconsistent about respecting mask boundaries
-exactly, especially for precise object placement. In practice this means:
-  - it works best when the mask region is reasonably generous, not a
-    razor-thin outline
-  - always sanity-check a sample batch visually before running all 1000
-    images through it
-  - the critic-based refinement loop (injection_pipeline.py) exists
-    partly to catch cases where Kontext ignores the mask and places the
-    lesion somewhere the critic doesn't like, or not at all
 
 License note: FLUX.1 Kontext [dev] weights are under BFL's non-commercial
 research license - fine for building a research dataset, flag before any
 commercial reuse.
 """
 
+import gc
+import os
 import numpy as np
 import cv2
 from PIL import Image
@@ -68,19 +52,17 @@ class KontextGGUFEngine:
             FluxTransformer2DModel,
             GGUFQuantizationConfig,
         )
+        from huggingface_hub import hf_hub_download
 
         gguf_path = gguf_path or KONTEXT_GGUF_PATH
         base_repo = base_repo or KONTEXT_BASE_REPO
 
-        # Load only the transformer from the GGUF quant; everything else
-        # (VAE, CLIP-L, T5-XXL, scheduler) comes from the original repo.
-        from huggingface_hub import hf_hub_download
-        import os
-        
-        # Download the specific config.json from the transformer subfolder
-        config_path = hf_hub_download(repo_id=base_repo, filename="config.json", subfolder="transformer")
+        # Download transformer config from the correct subfolder
+        config_path = hf_hub_download(
+            repo_id=base_repo, filename="config.json", subfolder="transformer"
+        )
         config_dir = os.path.dirname(config_path)
-        
+
         transformer = FluxTransformer2DModel.from_single_file(
             gguf_path,
             config=config_dir,
@@ -93,16 +75,13 @@ class KontextGGUFEngine:
             transformer=transformer,
             torch_dtype=torch.bfloat16,
         )
-        # Sequential CPU offloading moves individual LAYERS to GPU one at a
-        # time (not whole sub-models). Much slower, but peak VRAM is dramatically
-        # lower — essential for Q8_0 on a 16 GB T4 where the transformer alone
-        # eats ~12 GB.
-        self.pipe.enable_sequential_cpu_offload()
+        # enable_model_cpu_offload is the ONLY offload mode compatible with
+        # GGUF quantized tensors (sequential offload crashes on meta-device
+        # conversion for GGUF types).
+        self.pipe.enable_model_cpu_offload()
         self.pipe.vae.enable_slicing()
         self.pipe.vae.enable_tiling()
-        # Shrink VAE tile size so each tile fits in the ~2 GB headroom left
-        # after the transformer is offloaded. Default is 512; 256 cuts memory
-        # by ~4x per tile.
+        # Shrink VAE tile size to reduce per-tile VRAM
         self.pipe.vae.tile_sample_min_size = 256
         self.pipe.vae.tile_latent_min_size = 32
         self.pipe.set_progress_bar_config(disable=True)
@@ -122,31 +101,28 @@ class KontextGGUFEngine:
         ),
         seed: int = None,
     ) -> np.ndarray:
-        """
-        target_img_bgr:     the normal / ulcerative-colitis image to inject into
-        reference_crop_bgr: a real polyp/tumor crop (exemplar) - see
-                             exemplar_bank.py for how these are built from
-                             your existing removal-task dataset + masks
-        mask:                binary mask (uint8, 0/255) marking WHERE on
-                              the target image to inject
-        seed:                optional int for reproducibility per image
-        """
-        import gc
-
         orig_size = (target_img_bgr.shape[1], target_img_bgr.shape[0])
 
-        # Scale everything to max 512px so the pipeline cannot inflate it
-        max_dim = 512
+        # ----- Downscale to 256px max to fit within ~2 GB VRAM headroom -----
+        # Q8_0 transformer eats ~12 GB; on a 16 GB T4 this leaves very
+        # little for VAE encode/decode even with tiling.  256px generation
+        # uses ~4x less memory than 512px per tile.
+        max_dim = 256
         scale = min(1.0, max_dim / max(orig_size))
         new_w = max(16, (int(orig_size[0] * scale) // 16) * 16)
         new_h = max(16, (int(orig_size[1] * scale) // 16) * 16)
 
-        target_img_bgr = cv2.resize(target_img_bgr, (new_w, new_h), interpolation=cv2.INTER_AREA)
-        mask = cv2.resize(mask, (new_w, new_h), interpolation=cv2.INTER_NEAREST)
-        # Also scale the reference crop to keep memory bounded
+        target_img_bgr = cv2.resize(
+            target_img_bgr, (new_w, new_h), interpolation=cv2.INTER_AREA
+        )
+        mask = cv2.resize(
+            mask, (new_w, new_h), interpolation=cv2.INTER_NEAREST
+        )
+
+        # Cap reference crop at 128px to keep memory bounded
         ref_h, ref_w = reference_crop_bgr.shape[:2]
-        if max(ref_h, ref_w) > 256:
-            ref_scale = 256 / max(ref_h, ref_w)
+        if max(ref_h, ref_w) > 128:
+            ref_scale = 128 / max(ref_h, ref_w)
             reference_crop_bgr = cv2.resize(
                 reference_crop_bgr,
                 (int(ref_w * ref_scale), int(ref_h * ref_scale)),
@@ -161,6 +137,7 @@ class KontextGGUFEngine:
         if seed is not None:
             generator = torch.Generator(device="cpu").manual_seed(seed)
 
+        # Force free any stale GPU tensors before inference
         gc.collect()
         torch.cuda.empty_cache()
 
@@ -176,6 +153,10 @@ class KontextGGUFEngine:
             guidance_scale=self.guidance_scale,
             generator=generator,
         ).images[0]
+
+        # Free GPU memory immediately after generation
+        gc.collect()
+        torch.cuda.empty_cache()
 
         result = result.resize(orig_size)
         return cv2.cvtColor(np.array(result), cv2.COLOR_RGB2BGR)
