@@ -127,6 +127,15 @@ class KontextGGUFEngine:
         """
         orig_size = (target_img_bgr.shape[1], target_img_bgr.shape[0])
 
+        # VAE OOM Protection: Scale down images to max 512x512 for inference
+        # (It will be scaled back up to orig_size before returning)
+        max_dim = 512
+        if max(orig_size) > max_dim:
+            scale = max_dim / max(orig_size)
+            new_w, new_h = int(orig_size[0] * scale), int(orig_size[1] * scale)
+            target_img_bgr = cv2.resize(target_img_bgr, (new_w, new_h), interpolation=cv2.INTER_AREA)
+            mask = cv2.resize(mask, (new_w, new_h), interpolation=cv2.INTER_NEAREST)
+
         target_rgb = Image.fromarray(cv2.cvtColor(target_img_bgr, cv2.COLOR_BGR2RGB))
         ref_rgb = Image.fromarray(cv2.cvtColor(reference_crop_bgr, cv2.COLOR_BGR2RGB))
         mask_img = Image.fromarray(mask)
