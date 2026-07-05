@@ -12,7 +12,7 @@ from dataclasses import dataclass
 
 from config import (
     IMAGES_DIR, OUTPUT_DIR, MAX_ITERS, CONF_THRESHOLD,
-    SWITCH_TO_SD_AFTER, MASK_DILATE_STEP,
+    MASK_DILATE_STEP,
 )
 from masks import prepare_initial_mask, dilate_mask
 
@@ -54,8 +54,6 @@ def refine_and_inpaint(filename, engines: dict, critic, bbox=None):
 
         # escalate for next attempt
         mask = dilate_mask(mask, MASK_DILATE_STEP)
-        if it >= SWITCH_TO_SD_AFTER and engine_name == "lama" and "sd" in engines:
-            engine_name = "sd"
 
     # exhausted iterations - save best effort, flagged in filename + log
     cv2.imwrite(os.path.join(OUTPUT_DIR, "unresolved_" + filename), result_img)
