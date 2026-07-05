@@ -36,7 +36,7 @@ MASK_FILE_EXT = ".png"      # extension of your mask files, if different from im
 
 MAX_ITERS = 4
 CONF_THRESHOLD = 0.35       # critic confidence below this = "polyp successfully removed"
-SWITCH_TO_SD_AFTER = 2      # after this many failed LaMa attempts, escalate to SD inpainting
+
 
 # ---------------------------------------------------------------------------
 # Injection task (adding a lesion to normal images)
@@ -74,4 +74,4 @@ INJECTION_CONF_THRESHOLD = 0.5   # critic confidence ABOVE this = "lesion convin
 # ---------------------------------------------------------------------------
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-SD_DTYPE = torch.float16 if DEVICE == "cuda" else torch.float32
+
