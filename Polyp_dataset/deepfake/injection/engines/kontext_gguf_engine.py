@@ -124,17 +124,6 @@ class KontextGGUFEngine:
         gc.collect()
         torch.cuda.empty_cache()
 
-        # Diffusers FLUX pipelines aggressively rescale image dimensions to ~1 megapixel
-        # which causes OOM on 16GB GPUs. We monkey-patch the internal resolution 
-        # calculator to force it to respect our requested downscaled dimensions.
-        def _enforce_size(*args, **kwargs):
-            return (new_h, new_w)
-            
-        if hasattr(self.pipe, "_default_height_width"):
-            self.pipe._default_height_width = _enforce_size
-        if hasattr(self.pipe, "default_height_width"):
-            self.pipe.default_height_width = _enforce_size
-
         print(f"[DEBUG] orig_size: {orig_size}, scale: {scale:.3f}")
         print(f"[DEBUG] Resized to new_w: {new_w}, new_h: {new_h}")
         print(f"[DEBUG] target_rgb.size: {target_rgb.size}")
@@ -143,6 +132,15 @@ class KontextGGUFEngine:
         print(f"[DEBUG] VRAM allocated before pipe: {torch.cuda.memory_allocated() / 1e9:.2f} GB")
         print(f"[DEBUG] VRAM reserved before pipe: {torch.cuda.memory_reserved() / 1e9:.2f} GB")
 
+        # NOTE: FluxKontextInpaintPipeline defaults to _auto_resize=True, which
+        # SNAPS height/width to the nearest entry in its own hardcoded
+        # PREFERRED_KONTEXT_RESOLUTIONS bucket list (aspect-ratio buckets sized
+        # to ~max_area, default 1024*1024) REGARDLESS of the height/width you
+        # pass in. That's what was silently blowing this up to ~912x1136 and
+        # OOMing at VAE-encode time. Passing _auto_resize=False makes it honor
+        # our explicit new_h/new_w; max_area is kept as a belt-and-suspenders
+        # cap in case that internal behavior changes in a future diffusers
+        # release.
         result = self.pipe(
             prompt=prompt,
             image=target_rgb,
@@ -154,6 +152,8 @@ class KontextGGUFEngine:
             num_inference_steps=self.num_inference_steps,
             guidance_scale=self.guidance_scale,
             generator=generator,
+            _auto_resize=False,
+            max_area=new_h * new_w,
         ).images[0]
 
         gc.collect()
