@@ -93,12 +93,18 @@ class KontextGGUFEngine:
             transformer=transformer,
             torch_dtype=torch.bfloat16,
         )
-        # Model offloading is important here: with the critic (YOLO) also
-        # resident on GPU, a 16GB T4/P100 will not fit everything at once
-        # otherwise, even with a Q4 quant.
-        self.pipe.enable_model_cpu_offload()
+        # Sequential CPU offloading moves individual LAYERS to GPU one at a
+        # time (not whole sub-models). Much slower, but peak VRAM is dramatically
+        # lower — essential for Q8_0 on a 16 GB T4 where the transformer alone
+        # eats ~12 GB.
+        self.pipe.enable_sequential_cpu_offload()
         self.pipe.vae.enable_slicing()
         self.pipe.vae.enable_tiling()
+        # Shrink VAE tile size so each tile fits in the ~2 GB headroom left
+        # after the transformer is offloaded. Default is 512; 256 cuts memory
+        # by ~4x per tile.
+        self.pipe.vae.tile_sample_min_size = 256
+        self.pipe.vae.tile_latent_min_size = 32
         self.pipe.set_progress_bar_config(disable=True)
 
         self.num_inference_steps = num_inference_steps or KONTEXT_NUM_STEPS
@@ -125,22 +131,27 @@ class KontextGGUFEngine:
                               the target image to inject
         seed:                optional int for reproducibility per image
         """
+        import gc
+
         orig_size = (target_img_bgr.shape[1], target_img_bgr.shape[0])
 
-        # VAE OOM Protection: Scale down images to max 512x512 for inference
-        # (It will be scaled back up to orig_size before returning)
+        # Scale everything to max 512px so the pipeline cannot inflate it
         max_dim = 512
-        new_w, new_h = orig_size
-        if max(orig_size) > max_dim:
-            scale = max_dim / max(orig_size)
-            new_w, new_h = int(orig_size[0] * scale), int(orig_size[1] * scale)
-        
-        # FLUX requires dimensions to be multiples of 16
-        new_w = max(16, (new_w // 16) * 16)
-        new_h = max(16, (new_h // 16) * 16)
-        
+        scale = min(1.0, max_dim / max(orig_size))
+        new_w = max(16, (int(orig_size[0] * scale) // 16) * 16)
+        new_h = max(16, (int(orig_size[1] * scale) // 16) * 16)
+
         target_img_bgr = cv2.resize(target_img_bgr, (new_w, new_h), interpolation=cv2.INTER_AREA)
         mask = cv2.resize(mask, (new_w, new_h), interpolation=cv2.INTER_NEAREST)
+        # Also scale the reference crop to keep memory bounded
+        ref_h, ref_w = reference_crop_bgr.shape[:2]
+        if max(ref_h, ref_w) > 256:
+            ref_scale = 256 / max(ref_h, ref_w)
+            reference_crop_bgr = cv2.resize(
+                reference_crop_bgr,
+                (int(ref_w * ref_scale), int(ref_h * ref_scale)),
+                interpolation=cv2.INTER_AREA,
+            )
 
         target_rgb = Image.fromarray(cv2.cvtColor(target_img_bgr, cv2.COLOR_BGR2RGB))
         ref_rgb = Image.fromarray(cv2.cvtColor(reference_crop_bgr, cv2.COLOR_BGR2RGB))
@@ -148,9 +159,8 @@ class KontextGGUFEngine:
 
         generator = None
         if seed is not None:
-            generator = torch.Generator(device=DEVICE).manual_seed(seed)
+            generator = torch.Generator(device="cpu").manual_seed(seed)
 
-        import gc
         gc.collect()
         torch.cuda.empty_cache()
 
