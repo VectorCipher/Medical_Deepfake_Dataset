@@ -90,6 +90,8 @@ class KontextGGUFEngine:
         # resident on GPU, a 16GB T4/P100 will not fit everything at once
         # otherwise, even with a Q4 quant.
         self.pipe.enable_model_cpu_offload()
+        self.pipe.vae.enable_slicing()
+        self.pipe.vae.enable_tiling()
         self.pipe.set_progress_bar_config(disable=True)
 
         self.num_inference_steps = num_inference_steps or KONTEXT_NUM_STEPS
