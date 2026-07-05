@@ -27,6 +27,10 @@ class InjectionResult:
     iterations_used: int
     final_confidence: float
     placement_xy: tuple
+    bbox_x1: int
+    bbox_y1: int
+    bbox_x2: int
+    bbox_y2: int
     success: bool
 
 
@@ -63,12 +67,18 @@ def inject_and_refine(target_dir, filename, engine, critic, exemplar_manifest):
     img_path = os.path.join(target_dir, filename)
     img = cv2.imread(img_path)
     if img is None:
-        return InjectionResult(filename, "none", 0, 0.0, (0, 0), False)
+        return InjectionResult(filename, "none", 0, 0.0, (0, 0), 0, 0, 0, 0, False)
+
+    # Create a masks subdirectory alongside injected images
+    masks_out_dir = os.path.join(INJECTED_OUTPUT_DIR, "masks")
+    os.makedirs(masks_out_dir, exist_ok=True)
 
     tried_exemplars = set()
     result_img = img.copy()
     conf = 0.0
     placement = (0, 0)
+    bbox = (0, 0, 0, 0)
+    placement_mask = None
     exemplar_row = None
 
     for it in range(1, INJECTION_MAX_ITERS + 1):
@@ -83,7 +93,9 @@ def inject_and_refine(target_dir, filename, engine, critic, exemplar_manifest):
         ref_crop = cv2.imread(exemplar_row["crop_path"])
         ref_mask = cv2.imread(exemplar_row["crop_mask_path"], cv2.IMREAD_GRAYSCALE)
 
-        placement_mask, placement, _ = sample_placement_mask(img.shape, ref_mask)
+        placement_mask, placement, mask_size = sample_placement_mask(img.shape, ref_mask)
+        mh, mw = mask_size
+        bbox = (placement[0], placement[1], placement[0] + mw, placement[1] + mh)
 
         result_img = engine.inject(
             target_img_bgr=img,
@@ -96,14 +108,22 @@ def inject_and_refine(target_dir, filename, engine, critic, exemplar_manifest):
         if conf >= INJECTION_CONF_THRESHOLD:
             out_path = os.path.join(INJECTED_OUTPUT_DIR, filename)
             cv2.imwrite(out_path, result_img)
+            # Save the injection mask (white = where polyp was injected)
+            mask_out_path = os.path.join(masks_out_dir, os.path.splitext(filename)[0] + "_mask.png")
+            cv2.imwrite(mask_out_path, placement_mask)
             return InjectionResult(
-                filename, exemplar_row["source_image"], it, conf, placement, True
+                filename, exemplar_row["source_image"], it, conf, placement,
+                bbox[0], bbox[1], bbox[2], bbox[3], True
             )
 
     # exhausted iterations - save best-effort anyway, flagged
     cv2.imwrite(os.path.join(INJECTED_OUTPUT_DIR, "weak_" + filename), result_img)
+    if placement_mask is not None:
+        mask_out_path = os.path.join(masks_out_dir, os.path.splitext(filename)[0] + "_mask.png")
+        cv2.imwrite(mask_out_path, placement_mask)
     return InjectionResult(
         filename,
         exemplar_row["source_image"] if exemplar_row is not None else "none",
-        INJECTION_MAX_ITERS, conf, placement, False,
+        INJECTION_MAX_ITERS, conf, placement,
+        bbox[0], bbox[1], bbox[2], bbox[3], False,
     )
