@@ -130,11 +130,17 @@ class KontextGGUFEngine:
         # VAE OOM Protection: Scale down images to max 512x512 for inference
         # (It will be scaled back up to orig_size before returning)
         max_dim = 512
+        new_w, new_h = orig_size
         if max(orig_size) > max_dim:
             scale = max_dim / max(orig_size)
             new_w, new_h = int(orig_size[0] * scale), int(orig_size[1] * scale)
-            target_img_bgr = cv2.resize(target_img_bgr, (new_w, new_h), interpolation=cv2.INTER_AREA)
-            mask = cv2.resize(mask, (new_w, new_h), interpolation=cv2.INTER_NEAREST)
+        
+        # FLUX requires dimensions to be multiples of 16
+        new_w = max(16, (new_w // 16) * 16)
+        new_h = max(16, (new_h // 16) * 16)
+        
+        target_img_bgr = cv2.resize(target_img_bgr, (new_w, new_h), interpolation=cv2.INTER_AREA)
+        mask = cv2.resize(mask, (new_w, new_h), interpolation=cv2.INTER_NEAREST)
 
         target_rgb = Image.fromarray(cv2.cvtColor(target_img_bgr, cv2.COLOR_BGR2RGB))
         ref_rgb = Image.fromarray(cv2.cvtColor(reference_crop_bgr, cv2.COLOR_BGR2RGB))
@@ -144,11 +150,17 @@ class KontextGGUFEngine:
         if seed is not None:
             generator = torch.Generator(device=DEVICE).manual_seed(seed)
 
+        import gc
+        gc.collect()
+        torch.cuda.empty_cache()
+
         result = self.pipe(
             prompt=prompt,
             image=target_rgb,
             mask_image=mask_img,
             image_reference=ref_rgb,
+            height=new_h,
+            width=new_w,
             strength=self.strength,
             num_inference_steps=self.num_inference_steps,
             guidance_scale=self.guidance_scale,
