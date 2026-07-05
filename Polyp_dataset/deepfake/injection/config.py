@@ -55,7 +55,7 @@ INJECTION_LOG_CSV_PATH = "/kaggle/working/injection_log.csv"
 #   Q4_K_M ~7GB  - safest on a 16GB T4/P100 alongside other loaded models
 #   Q5_K_M ~8.5GB
 #   Q6_K   ~10GB - better quality, less headroom for the critic model
-KONTEXT_GGUF_PATH = "/kaggle/input/models/tungnguyen62cg/flux.1-kontext-dev-gguf/gguf/default/1/flux1-kontext-dev-Q8_0.gguf"
+KONTEXT_GGUF_PATH = "/kaggle/working/kontext_gguf/flux1-kontext-dev-Q4_K_M.gguf"
 
 # base repo supplies VAE + text encoders (CLIP-L, T5-XXL) + config,
 # NOT included in the GGUF file, which only contains the transformer
