@@ -13,7 +13,7 @@ import torch
 import pandas as pd
 
 from config import OUTPUT_DIR, LOG_CSV_PATH, CSV_PATH, CRITIC_WEIGHTS
-from engines import LamaEngine, SDInpaintEngine
+from engines import LamaEngine
 from critic import Critic
 from pipeline import refine_and_inpaint
 
@@ -24,7 +24,6 @@ def main():
     print("Loading engines...")
     engines = {
         "lama": LamaEngine(),
-        "sd": SDInpaintEngine(),
     }
     print("Loading critic...")
     critic = Critic(CRITIC_WEIGHTS)
