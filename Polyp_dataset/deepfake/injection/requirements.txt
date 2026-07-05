@@ -1,0 +1,11 @@
+simple-lama-inpainting
+# diffusers: FluxKontextInpaintPipeline + GGUF loading need a recent build,
+# install from the main branch rather than pip's stable release:
+#   pip install git+https://github.com/huggingface/diffusers.git
+accelerate
+transformers
+sentencepiece
+gguf
+ultralytics
+opencv-python-headless
+pandas
