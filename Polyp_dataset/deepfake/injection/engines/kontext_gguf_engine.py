@@ -124,6 +124,17 @@ class KontextGGUFEngine:
         gc.collect()
         torch.cuda.empty_cache()
 
+        # Diffusers FLUX pipelines aggressively rescale image dimensions to ~1 megapixel
+        # which causes OOM on 16GB GPUs. We monkey-patch the internal resolution 
+        # calculator to force it to respect our requested downscaled dimensions.
+        def _enforce_size(*args, **kwargs):
+            return (new_h, new_w)
+            
+        if hasattr(self.pipe, "_default_height_width"):
+            self.pipe._default_height_width = _enforce_size
+        if hasattr(self.pipe, "default_height_width"):
+            self.pipe.default_height_width = _enforce_size
+
         print(f"[DEBUG] orig_size: {orig_size}, scale: {scale:.3f}")
         print(f"[DEBUG] Resized to new_w: {new_w}, new_h: {new_h}")
         print(f"[DEBUG] target_rgb.size: {target_rgb.size}")
